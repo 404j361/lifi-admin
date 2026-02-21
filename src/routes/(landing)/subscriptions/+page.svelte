@@ -28,6 +28,7 @@
 				<Select.Root type="single" name="plan" bind:value={plan}>
 					<Select.Trigger class="w-full">{plan || 'Plan'}</Select.Trigger>
 					<Select.Content>
+						<Select.Item value="weekly">Weekly</Select.Item>
 						<Select.Item value="monthly">Monthly</Select.Item>
 						<Select.Item value="yearly">Yearly</Select.Item>
 					</Select.Content>
@@ -124,6 +125,7 @@
 				<Select.Root type="single" bind:value={editPlan}>
 					<Select.Trigger class="mb-4 w-full">{editPlan}</Select.Trigger>
 					<Select.Content>
+						<Select.Item value="weekly">Weekly</Select.Item>
 						<Select.Item value="monthly">Monthly</Select.Item>
 						<Select.Item value="yearly">Yearly</Select.Item>
 					</Select.Content>

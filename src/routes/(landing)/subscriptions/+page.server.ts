@@ -2,6 +2,8 @@ import type { PageServerLoad, Actions } from './$types';
 import { adminSupabase } from '$lib/adminSupabase';
 import { fail } from '@sveltejs/kit';
 
+type Plan = 'weekly' | 'monthly' | 'yearly';
+
 export const load: PageServerLoad = async () => {
 	const { data: subs } = await adminSupabase
 		.from('subscriptions')
@@ -22,13 +24,30 @@ function addMonths(date: Date, months: number) {
 	return d;
 }
 
+function addDays(date: Date, days: number) {
+	const d = new Date(date);
+	d.setDate(d.getDate() + days);
+	return d;
+}
+
+function parsePlan(value: FormDataEntryValue | null): Plan | null {
+	if (value === 'weekly' || value === 'monthly' || value === 'yearly') return value;
+	return null;
+}
+
+function addPlanDuration(date: Date, plan: Plan) {
+	if (plan === 'weekly') return addDays(date, 7);
+	if (plan === 'yearly') return addMonths(date, 12);
+	return addMonths(date, 1);
+}
+
 export const actions: Actions = {
 	create: async ({ request }) => {
 		const form = await request.formData();
 		const email = String(form.get('email'));
-		const plan = String(form.get('plan'));
+		const plan = parsePlan(form.get('plan'));
 		const platform = String(form.get('platform'));
-		const months = plan === 'yearly' ? 12 : 1;
+		if (!plan) return fail(400, { message: 'Invalid plan' });
 
 		const { data: user } = await adminSupabase
 			.from('profiles')
@@ -52,11 +71,12 @@ export const actions: Actions = {
 			const base =
 				new Date(existing.current_period_end) > now ? new Date(existing.current_period_end) : now;
 
-			const newEnd = addMonths(base, months);
+			const newEnd = addPlanDuration(base, plan);
 
 			await adminSupabase
 				.from('subscriptions')
 				.update({
+					product_id: plan,
 					current_period_end: newEnd,
 					status: 'active'
 				})
@@ -65,7 +85,7 @@ export const actions: Actions = {
 			return { success: true, renewed: true };
 		}
 
-		const end = addMonths(now, months);
+		const end = addPlanDuration(now, plan);
 
 		await adminSupabase.from('subscriptions').insert({
 			user_id: user.id,
@@ -98,9 +118,9 @@ export const actions: Actions = {
 	update: async ({ request }) => {
 		const form = await request.formData();
 		const id = String(form.get('id'));
-		const plan = String(form.get('plan'));
+		const plan = parsePlan(form.get('plan'));
 		const platform = String(form.get('platform'));
-		const months = plan === 'yearly' ? 12 : 1;
+		if (!plan) return fail(400, { message: 'Invalid plan' });
 
 		const { data: sub } = await adminSupabase
 			.from('subscriptions')
@@ -113,8 +133,7 @@ export const actions: Actions = {
 		const now = new Date();
 		const base = new Date(sub.current_period_end) > now ? new Date(sub.current_period_end) : now;
 
-		const newEnd = new Date(base);
-		newEnd.setMonth(newEnd.getMonth() + months);
+		const newEnd = addPlanDuration(base, plan);
 
 		await adminSupabase
 			.from('subscriptions')
