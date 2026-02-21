@@ -57,6 +57,11 @@ const sourceLabelMap: Record<string, string> = {
 };
 
 const ageBuckets = ['<18', '18-24', '25-34', '35-44', '45-54', '55+', 'Unknown'] as const;
+type CountRange = {
+	start: Date;
+	end: Date;
+	label: string;
+};
 
 function getDayKey(date: Date) {
 	const year = date.getFullYear();
@@ -65,24 +70,10 @@ function getDayKey(date: Date) {
 	return `${year}-${month}-${day}`;
 }
 
-function getYearKey(date: Date) {
-	return String(date.getFullYear());
-}
-
 function addDays(date: Date, days: number) {
 	const d = new Date(date);
 	d.setDate(d.getDate() + days);
 	return d;
-}
-
-function formatTimestampNoTimezone(date: Date) {
-	const year = date.getFullYear();
-	const month = String(date.getMonth() + 1).padStart(2, '0');
-	const day = String(date.getDate()).padStart(2, '0');
-	const hour = String(date.getHours()).padStart(2, '0');
-	const minute = String(date.getMinutes()).padStart(2, '0');
-	const second = String(date.getSeconds()).padStart(2, '0');
-	return `${year}-${month}-${day} ${hour}:${minute}:${second}`;
 }
 
 function normalizeSource(raw: string | null): string {
@@ -102,8 +93,7 @@ function normalizeGender(raw: string | null): string {
 	if (!cleaned) return 'Unknown';
 	if (cleaned === 'm' || cleaned === 'male') return 'Male';
 	if (cleaned === 'f' || cleaned === 'female') return 'Female';
-	if (cleaned === 'other' || cleaned === 'non binary' || cleaned === 'non-binary')
-		return 'Other';
+	if (cleaned === 'other' || cleaned === 'non binary' || cleaned === 'non-binary') return 'Other';
 	return toTitleCase(cleaned);
 }
 
@@ -140,40 +130,65 @@ function buildRollingDailyStats(rows: CreatedAtRow[], days: number): GrowthPoint
 	return points.map(({ label, count }) => ({ label, count }));
 }
 
-function buildYearlyStats(rows: CreatedAtRow[]): GrowthPoint[] {
-	const currentYear = new Date().getFullYear();
-	let minYear = currentYear;
+function buildRollingRanges(days: number, todayStart: Date): CountRange[] {
+	return Array.from({ length: days }, (_, index) => {
+		const start = addDays(todayStart, index - (days - 1));
+		return {
+			start,
+			end: addDays(start, 1),
+			label: start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+		};
+	});
+}
 
-	for (const row of rows) {
-		if (!row.created_at) continue;
-		const createdAt = new Date(row.created_at);
-		if (Number.isNaN(createdAt.getTime())) continue;
-		minYear = Math.min(minYear, createdAt.getFullYear());
+async function fetchCreatedAtCounts(table: 'profiles' | 'subscriptions', ranges: CountRange[]) {
+	const results = await Promise.all(
+		ranges.map((range) =>
+			adminSupabase
+				.from(table)
+				.select('id', { count: 'exact', head: true })
+				.gte('created_at', range.start.toISOString())
+				.lt('created_at', range.end.toISOString())
+		)
+	);
+
+	return results.map(({ count }) => count ?? 0);
+}
+
+async function buildProfileRollingDailyStats(days: number, todayStart: Date): Promise<GrowthPoint[]> {
+	const ranges = buildRollingRanges(days, todayStart);
+	const counts = await fetchCreatedAtCounts('profiles', ranges);
+	return ranges.map((range, index) => ({ label: range.label, count: counts[index] ?? 0 }));
+}
+
+async function buildProfileYearlyStats(todayStart: Date): Promise<GrowthPoint[]> {
+	const currentYear = todayStart.getFullYear();
+
+	const { data: oldestProfile } = await adminSupabase
+		.from('profiles')
+		.select('created_at')
+		.not('created_at', 'is', null)
+		.order('created_at', { ascending: true })
+		.limit(1)
+		.maybeSingle();
+
+	let minYear = currentYear;
+	if (oldestProfile?.created_at) {
+		const oldestDate = new Date(oldestProfile.created_at);
+		if (!Number.isNaN(oldestDate.getTime())) minYear = oldestDate.getFullYear();
 	}
 
-	const points = Array.from({ length: currentYear - minYear + 1 }, (_, index) => {
+	const ranges: CountRange[] = Array.from({ length: currentYear - minYear + 1 }, (_, index) => {
 		const year = minYear + index;
 		return {
-			key: String(year),
-			label: String(year),
-			count: 0
+			start: new Date(year, 0, 1),
+			end: new Date(year + 1, 0, 1),
+			label: String(year)
 		};
 	});
 
-	const countMap = new Map(points.map((point) => [point.key, point]));
-
-	for (const row of rows) {
-		if (!row.created_at) continue;
-
-		const createdAt = new Date(row.created_at);
-		if (Number.isNaN(createdAt.getTime())) continue;
-
-		const key = getYearKey(createdAt);
-		const point = countMap.get(key);
-		if (point) point.count += 1;
-	}
-
-	return points.map(({ label, count }) => ({ label, count }));
+	const counts = await fetchCreatedAtCounts('profiles', ranges);
+	return ranges.map((range, index) => ({ label: range.label, count: counts[index] ?? 0 }));
 }
 
 function buildSourceStats(rows: ProfileSourceRow[]): SourcePoint[] {
@@ -250,7 +265,11 @@ function buildEventTypeStats(rows: SubscriptionEventRow[], limit = 8): MetricPoi
 	return points.slice(0, limit);
 }
 
-function countTodaySubscriptions(rows: SubscriptionMetricsRow[], todayStart: Date, tomorrowStart: Date) {
+function countTodaySubscriptions(
+	rows: SubscriptionMetricsRow[],
+	todayStart: Date,
+	tomorrowStart: Date
+) {
 	let count = 0;
 
 	for (const row of rows) {
@@ -269,28 +288,32 @@ export const load: PageServerLoad = async () => {
 	const tomorrowStart = addDays(todayStart, 1);
 
 	const yearlyStart = new Date(todayStart.getFullYear(), todayStart.getMonth() - 11, 1);
+	const monthlyGrowthPromise = buildProfileRollingDailyStats(30, todayStart);
+	const yearlyGrowthPromise = buildProfileYearlyStats(todayStart);
 
 	const [
+		monthlyGrowth,
+		yearlyGrowth,
 		{ count: todayCount },
 		{ count: totalUsers },
-		{ data: growthRows },
 		{ data: todaySourceRows },
 		{ data: profileMetricsRows },
 		{ data: subscriptionRows },
 		{ data: subscriptionEventRows }
 	] = await Promise.all([
+		monthlyGrowthPromise,
+		yearlyGrowthPromise,
 		adminSupabase
 			.from('profiles')
 			.select('*', { count: 'exact', head: true })
-			.gte('created_at', formatTimestampNoTimezone(todayStart))
-			.lt('created_at', formatTimestampNoTimezone(tomorrowStart)),
+			.gte('created_at', todayStart.toISOString())
+			.lt('created_at', tomorrowStart.toISOString()),
 		adminSupabase.from('profiles').select('*', { count: 'exact', head: true }),
-		adminSupabase.from('profiles').select('created_at'),
 		adminSupabase
 			.from('profiles')
 			.select('hearus')
-			.gte('created_at', formatTimestampNoTimezone(todayStart))
-			.lt('created_at', formatTimestampNoTimezone(tomorrowStart)),
+			.gte('created_at', todayStart.toISOString())
+			.lt('created_at', tomorrowStart.toISOString()),
 		adminSupabase.from('profiles').select('hearus, gender, goal, age'),
 		adminSupabase.from('subscriptions').select('status, platform, created_at'),
 		adminSupabase
@@ -299,13 +322,13 @@ export const load: PageServerLoad = async () => {
 			.gte('created_at', yearlyStart.toISOString())
 	]);
 
-	const safeGrowthRows: CreatedAtRow[] = (growthRows ?? []) as CreatedAtRow[];
 	const safeTodaySourceRows: ProfileSourceRow[] = (todaySourceRows ?? []) as ProfileSourceRow[];
-	const safeProfileMetricsRows: ProfileMetricsRow[] = (profileMetricsRows ?? []) as ProfileMetricsRow[];
-	const safeSubscriptionRows: SubscriptionMetricsRow[] =
-		(subscriptionRows ?? []) as SubscriptionMetricsRow[];
-	const safeSubscriptionEventRows: SubscriptionEventRow[] =
-		(subscriptionEventRows ?? []) as SubscriptionEventRow[];
+	const safeProfileMetricsRows: ProfileMetricsRow[] = (profileMetricsRows ??
+		[]) as ProfileMetricsRow[];
+	const safeSubscriptionRows: SubscriptionMetricsRow[] = (subscriptionRows ??
+		[]) as SubscriptionMetricsRow[];
+	const safeSubscriptionEventRows: SubscriptionEventRow[] = (subscriptionEventRows ??
+		[]) as SubscriptionEventRow[];
 
 	const activeSubscriptions = safeSubscriptionRows.filter(
 		(row) => normalizeLabel(row.status) === 'Active'
@@ -320,9 +343,9 @@ export const load: PageServerLoad = async () => {
 		),
 		todaySourceStats: buildSourceStats(safeTodaySourceRows),
 		growthStats: {
-			yearly: buildYearlyStats(safeGrowthRows),
-			weekly: buildRollingDailyStats(safeGrowthRows, 7),
-			monthly: buildRollingDailyStats(safeGrowthRows, 30)
+			yearly: yearlyGrowth,
+			weekly: monthlyGrowth.slice(-7),
+			monthly: monthlyGrowth
 		},
 		subscriptionKpis: {
 			total: totalSubscriptions,

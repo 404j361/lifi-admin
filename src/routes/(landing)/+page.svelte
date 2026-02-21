@@ -47,6 +47,7 @@
 	];
 
 	function getGrowthPoints(tab: GrowthTab): GrowthPoint[] {
+		console.log(data.growthStats);
 		return (data.growthStats?.[tab] ?? []) as GrowthPoint[];
 	}
 
@@ -124,7 +125,12 @@
 					type: 'doughnut',
 					data: {
 						labels: points.map((point) => point.label),
-						datasets: [{ data: points.map((point) => point.count), backgroundColor: getColors(points.length) }]
+						datasets: [
+							{
+								data: points.map((point) => point.count),
+								backgroundColor: getColors(points.length)
+							}
+						]
 					},
 					options: { responsive: true, maintainAspectRatio: false }
 				})
@@ -139,7 +145,12 @@
 					type: 'pie',
 					data: {
 						labels: points.map((point) => point.label),
-						datasets: [{ data: points.map((point) => point.count), backgroundColor: getColors(points.length) }]
+						datasets: [
+							{
+								data: points.map((point) => point.count),
+								backgroundColor: getColors(points.length)
+							}
+						]
 					},
 					options: { responsive: true, maintainAspectRatio: false }
 				})
@@ -156,7 +167,11 @@
 						labels: points.map((point) => point.label),
 						datasets: [{ label: 'Subscriptions', data: points.map((point) => point.count) }]
 					},
-					options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true } } }
+					options: {
+						responsive: true,
+						maintainAspectRatio: false,
+						scales: { y: { beginAtZero: true } }
+					}
 				})
 			);
 		}
@@ -191,12 +206,18 @@
 						labels: points.map((point) => point.label),
 						datasets: [{ label: 'Users', data: points.map((point) => point.count) }]
 					},
-					options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true } } }
+					options: {
+						responsive: true,
+						maintainAspectRatio: false,
+						scales: { y: { beginAtZero: true } }
+					}
 				})
 			);
 		}
 
-		const subTrendCanvas = document.getElementById('subscriptionTrendChart') as HTMLCanvasElement | null;
+		const subTrendCanvas = document.getElementById(
+			'subscriptionTrendChart'
+		) as HTMLCanvasElement | null;
 		if (subTrendCanvas) {
 			const points = getMetricPoints(data.subscriptionTrendStats);
 			extraCharts.push(
@@ -215,7 +236,11 @@
 							}
 						]
 					},
-					options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true } } }
+					options: {
+						responsive: true,
+						maintainAspectRatio: false,
+						scales: { y: { beginAtZero: true } }
+					}
 				})
 			);
 		}
@@ -307,7 +332,9 @@
 			<CardTitle>Conversion Rate</CardTitle>
 		</CardHeader>
 		<CardContent>
-			<h2 class="text-3xl font-bold text-card-foreground">{data.subscriptionKpis.conversionRate}%</h2>
+			<h2 class="text-3xl font-bold text-card-foreground">
+				{data.subscriptionKpis.conversionRate}%
+			</h2>
 		</CardContent>
 	</Card>
 </section>
