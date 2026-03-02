@@ -1,6 +1,6 @@
 <script lang="ts">
 	import * as Sidebar from '$lib/components/ui/sidebar';
-	import { Users, LogOut, Sun, ChartColumnBig, TrophyIcon } from 'lucide-svelte';
+	import { Users, LogOut, ChartColumnBig, TrophyIcon, DollarSign } from 'lucide-svelte';
 	import { supabase } from '$lib/supabase';
 </script>
 
@@ -16,7 +16,16 @@
 						<a href="/">
 							<Sidebar.MenuButton>
 								<ChartColumnBig class="h-4 w-4" />
-								<span>Daily Report</span>
+								<span>User Report</span>
+							</Sidebar.MenuButton>
+						</a>
+					</Sidebar.MenuItem>
+
+					<Sidebar.MenuItem>
+						<a href="/sales-report">
+							<Sidebar.MenuButton>
+								<DollarSign class="h-4 w-4" />
+								<span>Sales Report</span>
 							</Sidebar.MenuButton>
 						</a>
 					</Sidebar.MenuItem>

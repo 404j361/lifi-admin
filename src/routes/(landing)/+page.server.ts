@@ -16,10 +16,6 @@ type MetricPoint = {
 	count: number;
 };
 
-type CreatedAtRow = {
-	created_at: string | null;
-};
-
 type ProfileSourceRow = {
 	hearus: string | null;
 };
@@ -29,16 +25,6 @@ type ProfileMetricsRow = {
 	gender: string | null;
 	goal: string | null;
 	age: number | null;
-};
-
-type SubscriptionMetricsRow = {
-	status: string | null;
-	platform: string | null;
-	created_at: string | null;
-};
-
-type SubscriptionEventRow = {
-	event_type: string | null;
 };
 
 const sourceLabelMap: Record<string, string> = {
@@ -62,13 +48,6 @@ type CountRange = {
 	end: Date;
 	label: string;
 };
-
-function getDayKey(date: Date) {
-	const year = date.getFullYear();
-	const month = String(date.getMonth() + 1).padStart(2, '0');
-	const day = String(date.getDate()).padStart(2, '0');
-	return `${year}-${month}-${day}`;
-}
 
 function addDays(date: Date, days: number) {
 	const d = new Date(date);
@@ -101,35 +80,6 @@ function toTitleCase(value: string): string {
 	return value.replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
-function buildRollingDailyStats(rows: CreatedAtRow[], days: number): GrowthPoint[] {
-	const today = new Date();
-	today.setHours(0, 0, 0, 0);
-
-	const points = Array.from({ length: days }, (_, index) => {
-		const date = addDays(today, index - (days - 1));
-		return {
-			key: getDayKey(date),
-			label: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-			count: 0
-		};
-	});
-
-	const countMap = new Map(points.map((point) => [point.key, point]));
-
-	for (const row of rows) {
-		if (!row.created_at) continue;
-
-		const createdAt = new Date(row.created_at);
-		if (Number.isNaN(createdAt.getTime())) continue;
-
-		const key = getDayKey(createdAt);
-		const point = countMap.get(key);
-		if (point) point.count += 1;
-	}
-
-	return points.map(({ label, count }) => ({ label, count }));
-}
-
 function buildRollingRanges(days: number, todayStart: Date): CountRange[] {
 	return Array.from({ length: days }, (_, index) => {
 		const start = addDays(todayStart, index - (days - 1));
@@ -141,7 +91,7 @@ function buildRollingRanges(days: number, todayStart: Date): CountRange[] {
 	});
 }
 
-async function fetchCreatedAtCounts(table: 'profiles' | 'subscriptions', ranges: CountRange[]) {
+async function fetchCreatedAtCounts(table: 'profiles', ranges: CountRange[]) {
 	const results = await Promise.all(
 		ranges.map((range) =>
 			adminSupabase
@@ -245,49 +195,10 @@ function buildGoalStats(rows: ProfileMetricsRow[], limit = 8): MetricPoint[] {
 	return points.slice(0, limit);
 }
 
-function buildSubscriptionStatusStats(rows: SubscriptionMetricsRow[]): MetricPoint[] {
-	return countByLabel(rows.map((row) => normalizeLabel(row.status)));
-}
-
-function buildPlatformStats(rows: SubscriptionMetricsRow[]): MetricPoint[] {
-	return countByLabel(rows.map((row) => normalizeLabel(row.platform)));
-}
-
-function buildSubscriptionTrend30(rows: SubscriptionMetricsRow[]): GrowthPoint[] {
-	const createdRows: CreatedAtRow[] = rows.map((row) => ({ created_at: row.created_at }));
-	return buildRollingDailyStats(createdRows, 30);
-}
-
-function buildEventTypeStats(rows: SubscriptionEventRow[], limit = 8): MetricPoint[] {
-	const points = countByLabel(rows.map((row) => normalizeLabel(row.event_type))).filter(
-		(point) => point.label !== 'Unknown'
-	);
-	return points.slice(0, limit);
-}
-
-function countTodaySubscriptions(
-	rows: SubscriptionMetricsRow[],
-	todayStart: Date,
-	tomorrowStart: Date
-) {
-	let count = 0;
-
-	for (const row of rows) {
-		if (!row.created_at) continue;
-		const createdAt = new Date(row.created_at);
-		if (Number.isNaN(createdAt.getTime())) continue;
-		if (createdAt >= todayStart && createdAt < tomorrowStart) count += 1;
-	}
-
-	return count;
-}
-
 export const load: PageServerLoad = async () => {
 	const todayStart = new Date();
 	todayStart.setHours(0, 0, 0, 0);
 	const tomorrowStart = addDays(todayStart, 1);
-
-	const yearlyStart = new Date(todayStart.getFullYear(), todayStart.getMonth() - 11, 1);
 	const monthlyGrowthPromise = buildProfileRollingDailyStats(30, todayStart);
 	const yearlyGrowthPromise = buildProfileYearlyStats(todayStart);
 
@@ -297,9 +208,7 @@ export const load: PageServerLoad = async () => {
 		{ count: todayCount },
 		{ count: totalUsers },
 		{ data: todaySourceRows },
-		{ data: profileMetricsRows },
-		{ data: subscriptionRows },
-		{ data: subscriptionEventRows }
+		{ data: profileMetricsRows }
 	] = await Promise.all([
 		monthlyGrowthPromise,
 		yearlyGrowthPromise,
@@ -314,26 +223,11 @@ export const load: PageServerLoad = async () => {
 			.select('hearus')
 			.gte('created_at', todayStart.toISOString())
 			.lt('created_at', tomorrowStart.toISOString()),
-		adminSupabase.from('profiles').select('hearus, gender, goal, age'),
-		adminSupabase.from('subscriptions').select('status, platform, created_at'),
-		adminSupabase
-			.from('subscription_events')
-			.select('event_type')
-			.gte('created_at', yearlyStart.toISOString())
+		adminSupabase.from('profiles').select('hearus, gender, goal, age')
 	]);
 
 	const safeTodaySourceRows: ProfileSourceRow[] = (todaySourceRows ?? []) as ProfileSourceRow[];
-	const safeProfileMetricsRows: ProfileMetricsRow[] = (profileMetricsRows ??
-		[]) as ProfileMetricsRow[];
-	const safeSubscriptionRows: SubscriptionMetricsRow[] = (subscriptionRows ??
-		[]) as SubscriptionMetricsRow[];
-	const safeSubscriptionEventRows: SubscriptionEventRow[] = (subscriptionEventRows ??
-		[]) as SubscriptionEventRow[];
-
-	const activeSubscriptions = safeSubscriptionRows.filter(
-		(row) => normalizeLabel(row.status) === 'Active'
-	).length;
-	const totalSubscriptions = safeSubscriptionRows.length;
+	const safeProfileMetricsRows: ProfileMetricsRow[] = (profileMetricsRows ?? []) as ProfileMetricsRow[];
 
 	return {
 		todayCount: todayCount || 0,
@@ -347,18 +241,8 @@ export const load: PageServerLoad = async () => {
 			weekly: monthlyGrowth.slice(-7),
 			monthly: monthlyGrowth
 		},
-		subscriptionKpis: {
-			total: totalSubscriptions,
-			active: activeSubscriptions,
-			todayNew: countTodaySubscriptions(safeSubscriptionRows, todayStart, tomorrowStart),
-			conversionRate: totalUsers ? Number(((activeSubscriptions / totalUsers) * 100).toFixed(1)) : 0
-		},
 		genderStats: countByLabel(safeProfileMetricsRows.map((row) => normalizeGender(row.gender))),
 		goalStats: buildGoalStats(safeProfileMetricsRows),
-		ageBucketStats: buildAgeBucketStats(safeProfileMetricsRows),
-		subscriptionStatusStats: buildSubscriptionStatusStats(safeSubscriptionRows),
-		platformStats: buildPlatformStats(safeSubscriptionRows),
-		subscriptionTrendStats: buildSubscriptionTrend30(safeSubscriptionRows),
-		eventTypeStats: buildEventTypeStats(safeSubscriptionEventRows)
+		ageBucketStats: buildAgeBucketStats(safeProfileMetricsRows)
 	};
 };

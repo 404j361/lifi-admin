@@ -10,11 +10,22 @@
 
 	let platform = '';
 	let plan = '';
+	let sourcePlatform = '';
+	let subscriptionType = '';
 
 	let dialogOpen = false;
 	let confirmAction: 'renew' | 'expire' | 'update' | null = null;
 	let selected: any = null;
 	let editPlan = 'monthly';
+
+	function getUserProfile(sub: any): { name?: string; email?: string } | null {
+		if (!sub?.user_profile) return null;
+		return Array.isArray(sub.user_profile) ? sub.user_profile[0] ?? null : sub.user_profile;
+	}
+
+	function getUserEmail(sub: any): string {
+		return getUserProfile(sub)?.email ?? '';
+	}
 </script>
 
 <section class="space-y-6">
@@ -43,6 +54,22 @@
 					</Select.Content>
 				</Select.Root>
 
+				<Select.Root type="single" name="source_platform" bind:value={sourcePlatform}>
+					<Select.Trigger class="w-full">{sourcePlatform || 'Source Platform'}</Select.Trigger>
+					<Select.Content>
+						<Select.Item value="facebook">Facebook</Select.Item>
+						<Select.Item value="tiktok">TikTok</Select.Item>
+					</Select.Content>
+				</Select.Root>
+
+				<Select.Root type="single" name="subscription_type" bind:value={subscriptionType}>
+					<Select.Trigger class="w-full">{subscriptionType || 'Subscription Type'}</Select.Trigger>
+					<Select.Content>
+						<Select.Item value="giveway">Giveway</Select.Item>
+						<Select.Item value="subscription">Subscription</Select.Item>
+					</Select.Content>
+				</Select.Root>
+
 				<Button type="submit" class="w-full">Grant</Button>
 			</form>
 		</CardContent>
@@ -67,8 +94,8 @@
 				<tbody>
 					{#each data.subs as s}
 						<tr class="border-b">
-							<td class="p-3 text-center">{s.profiles?.name}</td>
-							<td class="p-3 text-center">{s.profiles?.email}</td>
+							<td class="p-3 text-center">{getUserProfile(s)?.name ?? '-'}</td>
+							<td class="p-3 text-center">{getUserEmail(s) || '-'}</td>
 							<td class="p-3 text-center capitalize">{s.product_id}</td>
 							<td class="p-3 text-center">{s.platform}</td>
 							<td class="p-3 text-center">
@@ -133,8 +160,8 @@
 			{:else}
 				<p class="mb-4 text-sm text-muted-foreground">
 					{confirmAction === 'renew'
-						? `Extend ${selected?.profiles?.email}'s subscription?`
-						: `Expire ${selected?.profiles?.email}'s subscription now?`}
+						? `Extend ${getUserEmail(selected)}'s subscription?`
+						: `Expire ${getUserEmail(selected)}'s subscription now?`}
 				</p>
 			{/if}
 
@@ -147,7 +174,7 @@
 						: '?/expire'}
 			>
 				<input type="hidden" name="id" value={selected?.id} />
-				<input type="hidden" name="email" value={selected?.profiles?.email} />
+				<input type="hidden" name="email" value={getUserEmail(selected)} />
 				<input type="hidden" name="platform" value={selected?.platform} />
 				<input
 					type="hidden"

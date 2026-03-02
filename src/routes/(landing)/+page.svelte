@@ -47,7 +47,6 @@
 	];
 
 	function getGrowthPoints(tab: GrowthTab): GrowthPoint[] {
-		console.log(data.growthStats);
 		return (data.growthStats?.[tab] ?? []) as GrowthPoint[];
 	}
 
@@ -137,45 +136,6 @@
 			);
 		}
 
-		const statusCanvas = document.getElementById('statusChart') as HTMLCanvasElement | null;
-		if (statusCanvas) {
-			const points = getMetricPoints(data.subscriptionStatusStats);
-			extraCharts.push(
-				new Chart(statusCanvas, {
-					type: 'pie',
-					data: {
-						labels: points.map((point) => point.label),
-						datasets: [
-							{
-								data: points.map((point) => point.count),
-								backgroundColor: getColors(points.length)
-							}
-						]
-					},
-					options: { responsive: true, maintainAspectRatio: false }
-				})
-			);
-		}
-
-		const platformCanvas = document.getElementById('platformChart') as HTMLCanvasElement | null;
-		if (platformCanvas) {
-			const points = getMetricPoints(data.platformStats);
-			extraCharts.push(
-				new Chart(platformCanvas, {
-					type: 'bar',
-					data: {
-						labels: points.map((point) => point.label),
-						datasets: [{ label: 'Subscriptions', data: points.map((point) => point.count) }]
-					},
-					options: {
-						responsive: true,
-						maintainAspectRatio: false,
-						scales: { y: { beginAtZero: true } }
-					}
-				})
-			);
-		}
-
 		const goalCanvas = document.getElementById('goalChart') as HTMLCanvasElement | null;
 		if (goalCanvas) {
 			const points = getMetricPoints(data.goalStats);
@@ -215,56 +175,6 @@
 			);
 		}
 
-		const subTrendCanvas = document.getElementById(
-			'subscriptionTrendChart'
-		) as HTMLCanvasElement | null;
-		if (subTrendCanvas) {
-			const points = getMetricPoints(data.subscriptionTrendStats);
-			extraCharts.push(
-				new Chart(subTrendCanvas, {
-					type: 'line',
-					data: {
-						labels: points.map((point) => point.label),
-						datasets: [
-							{
-								label: 'New Subscriptions',
-								data: points.map((point) => point.count),
-								borderColor: '#10B981',
-								backgroundColor: 'rgba(16, 185, 129, 0.25)',
-								fill: true,
-								tension: 0.3
-							}
-						]
-					},
-					options: {
-						responsive: true,
-						maintainAspectRatio: false,
-						scales: { y: { beginAtZero: true } }
-					}
-				})
-			);
-		}
-
-		const eventCanvas = document.getElementById('eventChart') as HTMLCanvasElement | null;
-		if (eventCanvas) {
-			const points = getMetricPoints(data.eventTypeStats);
-			extraCharts.push(
-				new Chart(eventCanvas, {
-					type: 'bar',
-					data: {
-						labels: points.map((point) => point.label),
-						datasets: [{ label: 'Events', data: points.map((point) => point.count) }]
-					},
-					options: {
-						responsive: true,
-						maintainAspectRatio: false,
-						indexAxis: 'y',
-						scales: { x: { beginAtZero: true } }
-					}
-				})
-			);
-		}
-
 		return () => {
 			growthChart?.destroy();
 			sourceChart?.destroy();
@@ -281,7 +191,9 @@
 	}
 </script>
 
-<section class="mb-8 grid w-full grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+<h1 class="mb-6 text-2xl font-semibold">User Report</h1>
+
+<section class="mb-8 grid w-full grid-cols-1 gap-4 sm:grid-cols-2">
 	<Card class="w-full">
 		<CardHeader>
 			<CardTitle>New Users Today</CardTitle>
@@ -297,44 +209,6 @@
 		</CardHeader>
 		<CardContent>
 			<h2 class="text-3xl font-bold text-card-foreground">{data.totalUsers}</h2>
-		</CardContent>
-	</Card>
-
-	<Card class="w-full">
-		<CardHeader>
-			<CardTitle>Active Subs</CardTitle>
-		</CardHeader>
-		<CardContent>
-			<h2 class="text-3xl font-bold text-card-foreground">{data.subscriptionKpis.active}</h2>
-		</CardContent>
-	</Card>
-
-	<Card class="w-full">
-		<CardHeader>
-			<CardTitle>Total Subs</CardTitle>
-		</CardHeader>
-		<CardContent>
-			<h2 class="text-3xl font-bold text-card-foreground">{data.subscriptionKpis.total}</h2>
-		</CardContent>
-	</Card>
-
-	<Card class="w-full">
-		<CardHeader>
-			<CardTitle>New Subs Today</CardTitle>
-		</CardHeader>
-		<CardContent>
-			<h2 class="text-3xl font-bold text-card-foreground">{data.subscriptionKpis.todayNew}</h2>
-		</CardContent>
-	</Card>
-
-	<Card class="w-full">
-		<CardHeader>
-			<CardTitle>Conversion Rate</CardTitle>
-		</CardHeader>
-		<CardContent>
-			<h2 class="text-3xl font-bold text-card-foreground">
-				{data.subscriptionKpis.conversionRate}%
-			</h2>
 		</CardContent>
 	</Card>
 </section>
@@ -394,26 +268,6 @@
 
 	<Card class="w-full">
 		<CardHeader>
-			<CardTitle>Subscription Status</CardTitle>
-		</CardHeader>
-		<CardContent>
-			<canvas id="statusChart" style="width: 100%; height: 300px;"></canvas>
-		</CardContent>
-	</Card>
-
-	<Card class="w-full">
-		<CardHeader>
-			<CardTitle>Subscription Platform</CardTitle>
-		</CardHeader>
-		<CardContent>
-			<canvas id="platformChart" style="width: 100%; height: 300px;"></canvas>
-		</CardContent>
-	</Card>
-</section>
-
-<section class="mb-8 grid w-full grid-cols-1 gap-6 md:grid-cols-2">
-	<Card class="w-full">
-		<CardHeader>
 			<CardTitle>Top Goals</CardTitle>
 			<CardDescription>Most common user goals</CardDescription>
 		</CardHeader>
@@ -428,26 +282,6 @@
 		</CardHeader>
 		<CardContent>
 			<canvas id="ageChart" style="width: 100%; height: 360px;"></canvas>
-		</CardContent>
-	</Card>
-</section>
-
-<section class="mb-8 grid w-full grid-cols-1 gap-6 md:grid-cols-2">
-	<Card class="w-full">
-		<CardHeader>
-			<CardTitle>New Subscriptions (30 Days)</CardTitle>
-		</CardHeader>
-		<CardContent>
-			<canvas id="subscriptionTrendChart" style="width: 100%; height: 320px;"></canvas>
-		</CardContent>
-	</Card>
-
-	<Card class="w-full">
-		<CardHeader>
-			<CardTitle>Subscription Events (12 Months)</CardTitle>
-		</CardHeader>
-		<CardContent>
-			<canvas id="eventChart" style="width: 100%; height: 320px;"></canvas>
 		</CardContent>
 	</Card>
 </section>

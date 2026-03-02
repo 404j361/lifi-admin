@@ -3,19 +3,26 @@ import { adminSupabase } from '$lib/adminSupabase';
 import { fail } from '@sveltejs/kit';
 
 type Plan = 'weekly' | 'monthly' | 'yearly';
+type SourcePlatform = 'facebook' | 'tiktok';
+type SubscriptionType = 'giveway' | 'subscription';
 
 export const load: PageServerLoad = async () => {
-	const { data: subs } = await adminSupabase
+	const { data: subs, error } = await adminSupabase
 		.from('subscriptions')
 		.select(
 			`
 			id, product_id, platform, status, current_period_end,
-			profiles(name,email)
+			user_profile:profiles!subscriptions_user_id_fkey(name,email)
 		`
 		)
 		.order('created_at', { ascending: false });
 
-	return { subs };
+	if (error) {
+		console.error('Failed to load subscriptions', error);
+		return { subs: [] };
+	}
+
+	return { subs: subs ?? [] };
 };
 
 function addMonths(date: Date, months: number) {
@@ -35,6 +42,16 @@ function parsePlan(value: FormDataEntryValue | null): Plan | null {
 	return null;
 }
 
+function parseSourcePlatform(value: FormDataEntryValue | null): SourcePlatform | null {
+	if (value === 'facebook' || value === 'tiktok') return value;
+	return null;
+}
+
+function parseSubscriptionType(value: FormDataEntryValue | null): SubscriptionType | null {
+	if (value === 'giveway' || value === 'subscription') return value;
+	return null;
+}
+
 function addPlanDuration(date: Date, plan: Plan) {
 	if (plan === 'weekly') return addDays(date, 7);
 	if (plan === 'yearly') return addMonths(date, 12);
@@ -42,12 +59,19 @@ function addPlanDuration(date: Date, plan: Plan) {
 }
 
 export const actions: Actions = {
-	create: async ({ request }) => {
+	create: async ({ request, locals }) => {
 		const form = await request.formData();
 		const email = String(form.get('email'));
 		const plan = parsePlan(form.get('plan'));
 		const platform = String(form.get('platform'));
+		const sourcePlatform = parseSourcePlatform(form.get('source_platform'));
+		const subscriptionType = parseSubscriptionType(form.get('subscription_type'));
 		if (!plan) return fail(400, { message: 'Invalid plan' });
+
+		const {
+			data: { user: manager }
+		} = await locals.supabase.auth.getUser();
+		if (!manager) return fail(401, { message: 'Unauthorized' });
 
 		const { data: user } = await adminSupabase
 			.from('profiles')
@@ -86,6 +110,8 @@ export const actions: Actions = {
 		}
 
 		const end = addPlanDuration(now, plan);
+		if (!sourcePlatform) return fail(400, { message: 'Invalid source platform' });
+		if (!subscriptionType) return fail(400, { message: 'Invalid subscription type' });
 
 		await adminSupabase.from('subscriptions').insert({
 			user_id: user.id,
@@ -95,7 +121,10 @@ export const actions: Actions = {
 			status: 'active',
 			current_period_start: now,
 			current_period_end: end,
-			auto_renew: false
+			auto_renew: false,
+			source_platform: sourcePlatform,
+			subscription_type: subscriptionType,
+			managed_by: manager.id
 		});
 
 		return { success: true, created: true };
