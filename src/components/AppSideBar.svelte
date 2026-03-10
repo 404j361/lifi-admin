@@ -1,7 +1,15 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
+	import { isAdminRole } from '$lib/access';
 	import * as Sidebar from '$lib/components/ui/sidebar';
-	import { Users, LogOut, ChartColumnBig, TrophyIcon, DollarSign } from 'lucide-svelte';
+	import { Users, LogOut, ChartColumnBig, TrophyIcon, DollarSign, Handshake } from 'lucide-svelte';
 	import { supabase } from '$lib/supabase';
+
+	type Profile = {
+		role?: string | null;
+	};
+
+	let { profile = null }: { profile?: Profile | null } = $props();
 </script>
 
 <Sidebar.Root class="border-r">
@@ -13,7 +21,7 @@
 			<Sidebar.GroupContent>
 				<Sidebar.Menu>
 					<Sidebar.MenuItem>
-						<a href="/">
+						<a href={resolve('/')}>
 							<Sidebar.MenuButton>
 								<ChartColumnBig class="h-4 w-4" />
 								<span>User Report</span>
@@ -21,17 +29,28 @@
 						</a>
 					</Sidebar.MenuItem>
 
-					<Sidebar.MenuItem>
-						<a href="/sales-report">
-							<Sidebar.MenuButton>
-								<DollarSign class="h-4 w-4" />
-								<span>Sales Report</span>
-							</Sidebar.MenuButton>
-						</a>
-					</Sidebar.MenuItem>
+					{#if isAdminRole(profile?.role)}
+						<Sidebar.MenuItem>
+							<a href={resolve('/sales-report')}>
+								<Sidebar.MenuButton>
+									<DollarSign class="h-4 w-4" />
+									<span>Sales Report</span>
+								</Sidebar.MenuButton>
+							</a>
+						</Sidebar.MenuItem>
+
+						<Sidebar.MenuItem>
+							<a href={resolve('/sales-team')}>
+								<Sidebar.MenuButton>
+									<Handshake class="h-4 w-4" />
+									<span>Sales Team</span>
+								</Sidebar.MenuButton>
+							</a>
+						</Sidebar.MenuItem>
+					{/if}
 
 					<Sidebar.MenuItem>
-						<a href="/users-management">
+						<a href={resolve('/users-management')}>
 							<Sidebar.MenuButton>
 								<Users class="h-4 w-4" />
 								<span>User Management</span>
@@ -40,7 +59,7 @@
 					</Sidebar.MenuItem>
 
 					<Sidebar.MenuItem>
-						<a href="/subscriptions">
+						<a href={resolve('/subscriptions')}>
 							<Sidebar.MenuButton>
 								<TrophyIcon class="h-4 w-4" />
 								<span>Subscriptions</span>

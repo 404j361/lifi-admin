@@ -1,6 +1,8 @@
+import { canAccessBackoffice } from '$lib/access';
 import type { PageServerLoad, Actions } from './$types';
 import { adminSupabase } from '$lib/adminSupabase';
 import { fail } from '@sveltejs/kit';
+import { getCurrentUserProfile } from '$lib/server/auth';
 
 type Plan = 'weekly' | 'monthly' | 'yearly';
 type SourcePlatform = 'facebook' | 'tiktok';
@@ -58,6 +60,15 @@ function addPlanDuration(date: Date, plan: Plan) {
 	return addMonths(date, 1);
 }
 
+async function requireSellerRole(locals: App.Locals) {
+	const { user, profile } = await getCurrentUserProfile(locals);
+	if (!user || !canAccessBackoffice(profile?.role)) {
+		return null;
+	}
+
+	return user;
+}
+
 export const actions: Actions = {
 	create: async ({ request, locals }) => {
 		const form = await request.formData();
@@ -68,10 +79,8 @@ export const actions: Actions = {
 		const subscriptionType = parseSubscriptionType(form.get('subscription_type'));
 		if (!plan) return fail(400, { message: 'Invalid plan' });
 
-		const {
-			data: { user: manager }
-		} = await locals.supabase.auth.getUser();
-		if (!manager) return fail(401, { message: 'Unauthorized' });
+		const manager = await requireSellerRole(locals);
+		if (!manager) return fail(403, { message: 'Not authorized' });
 
 		const { data: user } = await adminSupabase
 			.from('profiles')
@@ -102,7 +111,8 @@ export const actions: Actions = {
 				.update({
 					product_id: plan,
 					current_period_end: newEnd,
-					status: 'active'
+					status: 'active',
+					managed_by: manager.id
 				})
 				.eq('id', existing.id);
 
@@ -130,7 +140,10 @@ export const actions: Actions = {
 		return { success: true, created: true };
 	},
 
-	expire: async ({ request }) => {
+	expire: async ({ request, locals }) => {
+		const manager = await requireSellerRole(locals);
+		if (!manager) return fail(403, { message: 'Not authorized' });
+
 		const form = await request.formData();
 		const id = String(form.get('id'));
 
@@ -144,7 +157,10 @@ export const actions: Actions = {
 		return { success: true };
 	},
 
-	update: async ({ request }) => {
+	update: async ({ request, locals }) => {
+		const manager = await requireSellerRole(locals);
+		if (!manager) return fail(403, { message: 'Not authorized' });
+
 		const form = await request.formData();
 		const id = String(form.get('id'));
 		const plan = parsePlan(form.get('plan'));
@@ -170,7 +186,8 @@ export const actions: Actions = {
 				product_id: plan,
 				platform,
 				current_period_end: newEnd,
-				status: 'active'
+				status: 'active',
+				managed_by: manager.id
 			})
 			.eq('id', id);
 

@@ -1,3 +1,4 @@
+import { canAccessBackoffice } from '$lib/access';
 import { adminSupabase } from '$lib/adminSupabase';
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
@@ -12,8 +13,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		.eq('email', email)
 		.single();
 
-	console.log(profile);
-	if (!profile || profile.role !== 'admin') {
+	if (!canAccessBackoffice(profile?.role)) {
 		return json({ error: 'Not authorized' }, { status: 403 });
 	}
 

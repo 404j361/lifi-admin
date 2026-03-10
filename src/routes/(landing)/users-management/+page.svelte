@@ -1,5 +1,8 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
+	import { ADMIN_ROLE, SALE_ROLE, USER_ROLE } from '$lib/access';
+	import type { PageData } from './$types';
+	import { SvelteURLSearchParams } from 'svelte/reactivity';
 	import { Input } from '$lib/components/ui/input';
 	import { Button } from '$lib/components/ui/button';
 	import {
@@ -11,53 +14,30 @@
 	} from '$lib/components/ui/dialog';
 	import * as Select from '$lib/components/ui/select';
 
-	export let data;
+	type UserRow = PageData['profiles'][number];
 
-	$: searchTerm = data.search || '';
-	$: pageSize = data.pageSize;
-	$: totalPages = Math.ceil(data.count / pageSize);
+	export let data: PageData;
 
-	/* EDIT STATE */
-	let editingUser: any = null;
+	let searchTerm = data.search || '';
+	let editingUser: UserRow | null = null;
 	let editOpen = false;
 	let saving = false;
 	let editError: string | null = null;
 	let editSuccess = false;
-
-	/* DELETE STATE */
-	let deletingUser: any = null;
+	let deletingUser: UserRow | null = null;
 	let deleteOpen = false;
 	let deleting = false;
 	let deleteError: string | null = null;
 
 	const MAX_BUTTONS = 7;
+	const roleOptions = [USER_ROLE, SALE_ROLE, ADMIN_ROLE] as const;
 
-	function openEdit(user: any) {
-		editingUser = { ...user };
-		editOpen = true;
-		editError = null;
-		editSuccess = false;
-	}
-
-	function closeEdit() {
-		editOpen = false;
-		editingUser = null;
-	}
-
-	function openDelete(user: any) {
-		deletingUser = user;
-		deleteOpen = true;
-		deleteError = null;
-	}
-
-	function closeDelete() {
-		deleteOpen = false;
-		deletingUser = null;
-	}
-
+	$: searchTerm = data.search || '';
+	$: totalPages = Math.ceil(data.count / data.pageSize);
 	$: paginationPages = (() => {
 		const pages: (number | string)[] = [];
 		const current = data.page;
+
 		if (totalPages <= MAX_BUTTONS) {
 			for (let i = 1; i <= totalPages; i++) pages.push(i);
 		} else {
@@ -69,14 +49,42 @@
 			if (end < totalPages - 1) pages.push('...');
 			pages.push(totalPages);
 		}
+
 		return pages;
 	})();
 
-	function goToPage(p: number) {
-		const q = new URLSearchParams(window.location.search);
-		q.set('page', String(p));
-		searchTerm ? q.set('search', searchTerm) : q.delete('search');
-		goto(`?${q}`);
+	function openEdit(user: UserRow) {
+		editingUser = { ...user };
+		editOpen = true;
+		editError = null;
+		editSuccess = false;
+	}
+
+	function closeEdit() {
+		editOpen = false;
+		editingUser = null;
+	}
+
+	function openDelete(user: UserRow) {
+		deletingUser = user;
+		deleteOpen = true;
+		deleteError = null;
+	}
+
+	function closeDelete() {
+		deleteOpen = false;
+		deletingUser = null;
+	}
+
+	function buildPageHref(p: number) {
+		const params = new SvelteURLSearchParams();
+		params.set('page', String(p));
+		params.set('pageSize', String(data.pageSize));
+
+		if (data.search) params.set('search', data.search);
+
+		const query = params.toString();
+		return query ? `${resolve('/users-management')}?${query}` : resolve('/users-management');
 	}
 
 	async function submitEdit() {
@@ -87,8 +95,13 @@
 		editSuccess = false;
 
 		const form = new FormData();
-		for (const k of ['id', 'name', 'email', 'age', 'gender', 'goal'])
-			form.append(k, editingUser[k]);
+		form.append('id', editingUser.id);
+		form.append('name', editingUser.name ?? '');
+		form.append('email', editingUser.email ?? '');
+		form.append('age', String(editingUser.age ?? ''));
+		form.append('gender', editingUser.gender ?? '');
+		form.append('goal', editingUser.goal ?? '');
+		form.append('role', editingUser.role ?? USER_ROLE);
 		form.append('isSpecial', editingUser.isSpecial ? 'true' : 'false');
 
 		const res = await fetch('?/editUser', { method: 'POST', body: form });
@@ -102,7 +115,7 @@
 		editSuccess = true;
 		setTimeout(() => {
 			closeEdit();
-			goto(window.location.href, { invalidateAll: true });
+			location.reload();
 		}, 700);
 	}
 
@@ -124,21 +137,17 @@
 		}
 
 		closeDelete();
-		goto(window.location.href, { invalidateAll: true });
+		location.reload();
 	}
 </script>
 
-<!-- SEARCH -->
-<div class="my-2 flex gap-2">
-	<Input
-		bind:value={searchTerm}
-		placeholder="Search users"
-		onkeydown={(e) => e.key === 'Enter' && goToPage(1)}
-	/>
-	<Button onclick={() => goToPage(1)}>Search</Button>
-</div>
+<form method="GET" action={resolve('/users-management')} class="my-2 flex gap-2">
+	<Input name="search" bind:value={searchTerm} placeholder="Search users" />
+	<input type="hidden" name="page" value="1" />
+	<input type="hidden" name="pageSize" value={data.pageSize} />
+	<Button type="submit">Search</Button>
+</form>
 
-<!-- TABLE -->
 <table class="w-full border-collapse">
 	<thead>
 		<tr class="bg-muted">
@@ -147,46 +156,50 @@
 			<th class="p-3 text-left">Age</th>
 			<th class="p-3 text-left">Gender</th>
 			<th class="p-3 text-left">Goal</th>
+			<th class="p-3 text-left">Role</th>
 			<th class="p-3 text-left">Special</th>
 			<th class="p-3 text-left">Created</th>
-			<th class="p-3 text-left">Actions</th>
+			{#if data.canManageUsers}
+				<th class="p-3 text-left">Actions</th>
+			{/if}
 		</tr>
 	</thead>
 	<tbody>
-		{#each data.profiles as user}
+		{#each data.profiles as user (user.id)}
 			<tr class="hover:bg-muted/50">
 				<td class="p-3">{user.name}</td>
 				<td class="p-3">{user.email}</td>
 				<td class="p-3">{user.age}</td>
 				<td class="p-3">{user.gender}</td>
 				<td class="p-3">{user.goal}</td>
+				<td class="p-3 capitalize">{user.role}</td>
 				<td class="p-3">{user.isSpecial ? 'Yes' : 'No'}</td>
 				<td class="p-3">{new Date(user.created_at).toLocaleDateString()}</td>
-				<td class="flex gap-2 p-3">
-					<Button size="sm" variant="outline" onclick={() => openEdit(user)}>Edit</Button>
-					<Button size="sm" variant="destructive" onclick={() => openDelete(user)}>Delete</Button>
-				</td>
+				{#if data.canManageUsers}
+					<td class="flex gap-2 p-3">
+						<Button size="sm" variant="outline" onclick={() => openEdit(user)}>Edit</Button>
+						<Button size="sm" variant="destructive" onclick={() => openDelete(user)}>Delete</Button>
+					</td>
+				{/if}
 			</tr>
 		{/each}
 	</tbody>
 </table>
 
-<!-- PAGINATION -->
 <div class="flex gap-2 py-2">
-	{#each paginationPages as p}
-		{#if p === '...'}<span class="px-3 py-1">…</span>
+	{#each paginationPages as p, index (`${p}-${index}`)}
+		{#if p === '...'}<span class="px-3 py-1">...</span>
 		{:else}
 			<Button
+				href={buildPageHref(p as number)}
 				size="sm"
-				variant={p === data.page ? 'default' : 'outline'}
-				onclick={() => goToPage(p as number)}>{p}</Button
+				variant={p === data.page ? 'default' : 'outline'}>{p}</Button
 			>
 		{/if}
 	{/each}
 </div>
 
-<!-- EDIT MODAL -->
-{#if editOpen && editingUser}
+{#if data.canManageUsers && editOpen && editingUser}
 	<Dialog open onOpenChange={(v) => !v && closeEdit()}>
 		<DialogContent>
 			<DialogHeader><DialogTitle>Edit User</DialogTitle></DialogHeader>
@@ -197,11 +210,13 @@
 
 			<Select.Root
 				type="single"
-				value={editingUser.gender}
-				onValueChange={(v) => (editingUser.gender = v)}
+				value={editingUser?.gender ?? ''}
+				onValueChange={(value) => {
+					if (editingUser) editingUser.gender = value;
+				}}
 			>
 				<Select.Trigger class="w-full">
-					{editingUser.gender}
+					{editingUser?.gender}
 				</Select.Trigger>
 				<Select.Content>
 					<Select.Item value="male">Male</Select.Item>
@@ -211,6 +226,23 @@
 			</Select.Root>
 
 			<Input bind:value={editingUser.goal} placeholder="Goal" />
+
+			<Select.Root
+				type="single"
+				value={editingUser?.role ?? USER_ROLE}
+				onValueChange={(value) => {
+					if (editingUser) editingUser.role = value;
+				}}
+			>
+				<Select.Trigger class="w-full">
+					{editingUser?.role ?? 'Role'}
+				</Select.Trigger>
+				<Select.Content>
+					{#each roleOptions as roleOption (roleOption)}
+						<Select.Item value={roleOption}>{roleOption}</Select.Item>
+					{/each}
+				</Select.Content>
+			</Select.Root>
 
 			<label class="mt-2 flex items-center gap-2">
 				<input type="checkbox" bind:checked={editingUser.isSpecial} /> Special User
@@ -222,15 +254,14 @@
 			<DialogFooter>
 				<Button variant="outline" onclick={closeEdit}>Cancel</Button>
 				<Button onclick={submitEdit} disabled={saving}>
-					{saving ? 'Saving…' : 'Save'}
+					{saving ? 'Saving...' : 'Save'}
 				</Button>
 			</DialogFooter>
 		</DialogContent>
 	</Dialog>
 {/if}
 
-<!-- DELETE MODAL -->
-{#if deleteOpen && deletingUser}
+{#if data.canManageUsers && deleteOpen && deletingUser}
 	<Dialog open onOpenChange={(v) => !v && closeDelete()}>
 		<DialogContent class="max-w-md">
 			<DialogHeader><DialogTitle class="text-red-600">Delete User</DialogTitle></DialogHeader>
@@ -245,7 +276,7 @@
 			<DialogFooter>
 				<Button variant="outline" onclick={closeDelete} disabled={deleting}>Cancel</Button>
 				<Button variant="destructive" onclick={confirmDelete} disabled={deleting}>
-					{deleting ? 'Deleting…' : 'Yes, Delete'}
+					{deleting ? 'Deleting...' : 'Yes, Delete'}
 				</Button>
 			</DialogFooter>
 		</DialogContent>
